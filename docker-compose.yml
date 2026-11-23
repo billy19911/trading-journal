@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     env_file:
-      - backend/.env.production
+      - deploy/.env.production
     depends_on:
       db:
         condition: service_healthy
@@ -24,7 +24,7 @@ services:
     environment:
       POSTGRES_DB: trading_journey
       POSTGRES_USER: trading
-      POSTGRES_PASSWORD: change-this-password
+      POSTGRES_PASSWORD: trading_secret_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

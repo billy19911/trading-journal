@@ -25,8 +25,17 @@ git clone https://github.com/billy19911/trading-journal.git /var/www/trading
 cd /var/www/trading
 ```
 
-### 4. Ganti Password Database di `docker-compose.yml` & `backend/.env.production` (opsional tapi disarankan):
-Buka file `backend/.env.production` dan sesuaikan password jika perlu.
+### 4. Buat environment production:
+```bash
+cp deploy/.env.production.example deploy/.env.production
+nano deploy/.env.production
+```
+Ganti `APP_KEY`, `APP_URL`, dan `DB_PASSWORD` sebelum expose server ke internet.
+
+Generate key baru dengan PHP lokal atau container:
+```bash
+docker run --rm -it -v "$PWD/backend:/app" -w /app php:8.4-cli php artisan key:generate --show
+```
 
 ### 5. Jalankan Container:
 ```bash
