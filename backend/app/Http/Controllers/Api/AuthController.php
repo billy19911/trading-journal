@@ -136,25 +136,6 @@ final class AuthController extends Controller
             ],
         );
 
-        if ($user->tradingAccounts()->count() === 0) {
-            $user->tradingAccounts()->create([
-                'id' => (string) Str::uuid(),
-                'account_name' => 'Exness Live',
-                'broker_name' => 'Exness',
-                'account_number' => (string) rand(7000000, 7999999),
-                'account_type' => 'Standard',
-                'currency_code' => 'USD',
-                'source_currency' => 'USD',
-                'cent_ratio' => 1,
-                'initial_capital' => 1000,
-                'initial_exchange_rate' => 1,
-                'initial_balance' => 1000,
-                'starting_date' => now()->toDateString(),
-                'daily_target_percent' => 1.0,
-                'status' => 'Active',
-            ]);
-        }
-
         $token = $user->createToken('google-web')->plainTextToken;
 
         return response()->json([

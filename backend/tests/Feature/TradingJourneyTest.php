@@ -274,22 +274,14 @@ final class TradingJourneyTest extends TestCase
         $resB->assertOk()->assertJsonStructure(['token', 'user']);
         $tokenB = $resB->json('token');
 
-        // User A accounts
+        // User A accounts (fresh user starts with 0 accounts)
         auth()->forgetGuards();
         $accountsA = $this->withToken($tokenA)->getJson('/api/accounts')->json('data');
-        $this->assertCount(1, $accountsA);
-        $accountIdA = $accountsA[0]['id'];
+        $this->assertCount(0, $accountsA);
 
-        // User B accounts
+        // User B accounts (fresh user starts with 0 accounts)
         auth()->forgetGuards();
         $accountsB = $this->withToken($tokenB)->getJson('/api/accounts')->json('data');
-        $this->assertCount(1, $accountsB);
-        $accountIdB = $accountsB[0]['id'];
-
-        $this->assertNotEquals($accountIdA, $accountIdB);
-
-        // User A cannot view User B's account
-        auth()->forgetGuards();
-        $this->withToken($tokenA)->getJson("/api/accounts/{$accountIdB}")->assertNotFound();
+        $this->assertCount(0, $accountsB);
     }
 }
