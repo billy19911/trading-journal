@@ -125,16 +125,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loginGmail: async (email) => {
+  loginGmail: async (credential) => {
     try {
-      const result = await api.loginGmail(email)
+      const result = await api.loginGmail(credential)
       setApiToken(result.token)
       set({ apiMode: 'cloud', token: result.token, userEmail: result.user.email })
       await get().fetchCloudData()
-      get().pushToast({ title: 'Signed in', message: result.user.email, tone: 'success' })
+      get().pushToast({ title: 'Signed in with Google', message: result.user.email, tone: 'success' })
       return true
     } catch (error) {
-      get().pushToast({ title: 'Gmail sign-in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
+      get().pushToast({ title: 'Google sign-in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
       return false
     }
   },

@@ -149,11 +149,11 @@ export const api = {
     return request('/auth/login', { method: 'POST', body: JSON.stringify(payload) })
   },
 
-  async loginGmail(email: string): Promise<{
+  async loginGmail(credential: string): Promise<{
     token: string
-    user: ApiUser
+    user: ApiUser & { picture?: string }
   }> {
-    return request('/auth/gmail', { method: 'POST', body: JSON.stringify({ email }) })
+    return request('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
   },
 
   async me(): Promise<{ user: ApiUser }> {

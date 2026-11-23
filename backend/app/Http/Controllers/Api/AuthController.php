@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -96,13 +97,39 @@ final class AuthController extends Controller
     public function gmail(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'email' => ['required', 'email', 'ends_with:gmail.com,googlemail.com'],
+            'credential' => ['required', 'string'],
         ]);
 
+        $clientId = config('services.google.client_id');
+
+        if (! $clientId) {
+            throw ValidationException::withMessages(['credential' => ['Google authentication is not configured.']]);
+        }
+
+        $googleResponse = Http::acceptJson()
+            ->timeout(5)
+            ->get('https://oauth2.googleapis.com/tokeninfo', ['id_token' => $validated['credential']]);
+
+        $payload = $googleResponse->json();
+
+        if (! $googleResponse->successful()
+            || ! is_array($payload)
+            || ($payload['aud'] ?? null) !== $clientId
+            || ($payload['iss'] ?? null) !== 'https://accounts.google.com'
+            || ($payload['email_verified'] ?? null) !== 'true'
+            || empty($payload['email'])
+        ) {
+            throw ValidationException::withMessages(['credential' => ['Google token verification failed.']]);
+        }
+
+        $email = strtolower((string) $payload['email']);
+        $name = $payload['name'] ?? ucfirst(str($email)->before('@'));
+        $picture = $payload['picture'] ?? null;
+
         $user = User::firstOrCreate(
-            ['email' => strtolower($validated['email'])],
+            ['email' => $email],
             [
-                'name' => ucfirst((string) str($validated['email'])->before('@')),
+                'name' => $name,
                 'password' => Hash::make(Str::random(40)),
                 'timezone' => 'Asia/Jakarta',
                 'locale' => 'en',
@@ -128,15 +155,16 @@ final class AuthController extends Controller
             ]);
         }
 
-        $token = $user->createToken('gmail-web')->plainTextToken;
+        $token = $user->createToken('google-web')->plainTextToken;
 
         return response()->json([
-            'message' => 'Gmail sign-in successful',
+            'message' => 'Google sign-in successful',
             'token' => $token,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'picture' => $picture,
                 'timezone' => $user->timezone,
                 'locale' => $user->locale,
             ],

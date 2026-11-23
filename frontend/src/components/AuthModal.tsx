@@ -1,7 +1,58 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Cloud, LogOut, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../store'
 import { Button, Field, Input, Modal, Segmented } from './ui'
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+
+function GoogleButton({ onCredential }: { onCredential: (credential: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const callbackRef = useRef(onCredential)
+  callbackRef.current = onCredential
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !ref.current) return
+
+    const initGoogle = () => {
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => callbackRef.current(response.credential),
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      })
+      if (ref.current) {
+        google.accounts.id.renderButton(ref.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'pill',
+          width: 320,
+        })
+      }
+    }
+
+    if (typeof google !== 'undefined' && google.accounts) {
+      initGoogle()
+    } else {
+      const existing = document.getElementById('google-gsi-script')
+      if (!existing) {
+        const script = document.createElement('script')
+        script.id = 'google-gsi-script'
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.onload = initGoogle
+        document.head.appendChild(script)
+      } else {
+        existing.addEventListener('load', initGoogle)
+      }
+    }
+  }, [])
+
+  if (!GOOGLE_CLIENT_ID) return null
+  return <div ref={ref} className="flex justify-center" />
+}
 
 export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const apiMode = useAppStore((state) => state.apiMode)
@@ -17,7 +68,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [gmailLoading, setGmailLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
 
   if (!open) return null
 
@@ -34,14 +85,13 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }
 
-  const handleGmail = async () => {
-    if (!email.toLowerCase().endsWith('@gmail.com') && !email.toLowerCase().endsWith('@googlemail.com')) return
-    setGmailLoading(true)
+  const handleGoogleCredential = async (credential: string) => {
+    setGoogleLoading(true)
     try {
-      const ok = await loginGmail(email)
+      const ok = await loginGmail(credential)
       if (ok) onClose()
     } finally {
-      setGmailLoading(false)
+      setGoogleLoading(false)
     }
   }
 
@@ -50,7 +100,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
       open={open}
       onClose={onClose}
       title={userEmail ? 'Account & backend' : tab === 'signin' ? 'Sign in to Trading Journey' : 'Create an account'}
-      description={userEmail ? `Active session: ${userEmail}` : 'Local Laravel API. Each Gmail account owns separate data.'}
+      description={userEmail ? `Active session: ${userEmail}` : 'Sign in with Google or use email/password.'}
       width="max-w-md"
     >
       {userEmail ? (
@@ -63,7 +113,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
               <div className="min-w-0">
                 <div className="truncate text-[12px] font-medium text-ink">{userEmail}</div>
                 <div className="flex items-center gap-1.5 text-[9px] text-profit">
-                  <Cloud size={10} strokeWidth={1.7} /> Connected to local Laravel API
+                  <Cloud size={10} strokeWidth={1.7} /> Connected to Laravel API
                 </div>
               </div>
             </div>
@@ -78,44 +128,44 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Segmented
-            value={tab}
-            onChange={(val) => setTab(val as 'signin' | 'register')}
-            options={[{ value: 'signin', label: 'Sign in' }, { value: 'register', label: 'Create account' }]}
-          />
+        <div className="space-y-4">
+          <GoogleButton onCredential={(credential) => void handleGoogleCredential(credential)} />
 
-          {tab === 'register' && (
-            <Field label="Your name"><Input required value={name} placeholder="Trader" onChange={(e) => setName(e.target.value)} /></Field>
+          {googleLoading && (
+            <div className="flex items-center justify-center gap-2 text-[10px] text-muted">
+              <RefreshCw size={12} className="animate-spin" /> Signing in with Google...
+            </div>
           )}
 
-          <Field label="Gmail address">
-            <Input required type="email" value={email} placeholder="trader@gmail.com" onChange={(e) => setEmail(e.target.value)} />
-          </Field>
+          <div className="flex items-center gap-2 text-[9px] text-faint"><span className="h-px flex-1 bg-line" />or use email & password<span className="h-px flex-1 bg-line" /></div>
 
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full"
-            disabled={gmailLoading || (!email.endsWith('@gmail.com') && !email.endsWith('@googlemail.com'))}
-            onClick={() => void handleGmail()}
-          >
-            {gmailLoading ? 'Connecting...' : 'Continue with Gmail'}
-          </Button>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Segmented
+              value={tab}
+              onChange={(val) => setTab(val as 'signin' | 'register')}
+              options={[{ value: 'signin', label: 'Sign in' }, { value: 'register', label: 'Create account' }]}
+            />
 
-          <div className="flex items-center gap-2 text-[9px] text-faint"><span className="h-px flex-1 bg-line" />or use password<span className="h-px flex-1 bg-line" /></div>
+            {tab === 'register' && (
+              <Field label="Your name"><Input required value={name} placeholder="Trader" onChange={(e) => setName(e.target.value)} /></Field>
+            )}
 
-          <Field label="Password">
-            <Input required minLength={8} type="password" value={password} placeholder="At least 8 characters" onChange={(e) => setPassword(e.target.value)} />
-          </Field>
+            <Field label="Email address">
+              <Input required type="email" value={email} placeholder="trader@example.com" onChange={(e) => setEmail(e.target.value)} />
+            </Field>
 
-          <div className="flex items-center justify-between gap-2 pt-2">
-            <button type="button" onClick={() => { setApiMode('mock'); onClose() }} className="text-[9.5px] text-faint underline">Use demo mode</button>
-            <Button variant="primary" size="sm" type="submit" disabled={loading} icon={loading ? <RefreshCw size={12} className="animate-spin" /> : <Check size={12} strokeWidth={2} />}>
-              {loading ? 'Connecting...' : tab === 'signin' ? 'Sign in' : 'Create account'}
-            </Button>
-          </div>
-        </form>
+            <Field label="Password">
+              <Input required minLength={8} type="password" value={password} placeholder="At least 8 characters" onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <button type="button" onClick={() => { setApiMode('mock'); onClose() }} className="text-[9.5px] text-faint underline">Use demo mode</button>
+              <Button variant="primary" size="sm" type="submit" disabled={loading} icon={loading ? <RefreshCw size={12} className="animate-spin" /> : <Check size={12} strokeWidth={2} />}>
+                {loading ? 'Connecting...' : tab === 'signin' ? 'Sign in' : 'Create account'}
+              </Button>
+            </div>
+          </form>
+        </div>
       )}
     </Modal>
   )

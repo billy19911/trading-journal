@@ -8,6 +8,7 @@ use App\Models\TradingAccount;
 use App\Models\User;
 use App\Services\CurrencyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 final class TradingJourneyTest extends TestCase
@@ -245,11 +246,31 @@ final class TradingJourneyTest extends TestCase
 
     public function test_gmail_one_click_login_and_data_isolation(): void
     {
-        $resA = $this->postJson('/api/auth/gmail', ['email' => 'trader1@gmail.com']);
+        Http::fake([
+            'https://oauth2.googleapis.com/tokeninfo*' => Http::sequence()
+                ->push([
+                    'aud' => 'test-client',
+                    'iss' => 'https://accounts.google.com',
+                    'email' => 'trader1@gmail.com',
+                    'name' => 'Trader One',
+                    'email_verified' => 'true',
+                ])
+                ->push([
+                    'aud' => 'test-client',
+                    'iss' => 'https://accounts.google.com',
+                    'email' => 'trader2@gmail.com',
+                    'name' => 'Trader Two',
+                    'email_verified' => 'true',
+                ]),
+        ]);
+
+        config(['services.google.client_id' => 'test-client']);
+
+        $resA = $this->postJson('/api/auth/google', ['credential' => 'token-a']);
         $resA->assertOk()->assertJsonStructure(['token', 'user']);
         $tokenA = $resA->json('token');
 
-        $resB = $this->postJson('/api/auth/gmail', ['email' => 'trader2@gmail.com']);
+        $resB = $this->postJson('/api/auth/google', ['credential' => 'token-b']);
         $resB->assertOk()->assertJsonStructure(['token', 'user']);
         $tokenB = $resB->json('token');
 

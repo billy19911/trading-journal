@@ -14,6 +14,7 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/gmail', [AuthController::class, 'gmail']);
+    Route::post('/google', [AuthController::class, 'gmail']);
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/me', [AuthController::class, 'me']);
