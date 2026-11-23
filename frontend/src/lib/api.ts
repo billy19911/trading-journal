@@ -149,6 +149,13 @@ export const api = {
     return request('/auth/login', { method: 'POST', body: JSON.stringify(payload) })
   },
 
+  async loginGmail(email: string): Promise<{
+    token: string
+    user: ApiUser
+  }> {
+    return request('/auth/gmail', { method: 'POST', body: JSON.stringify({ email }) })
+  },
+
   async me(): Promise<{ user: ApiUser }> {
     return request('/auth/me')
   },

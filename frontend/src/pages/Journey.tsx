@@ -26,12 +26,17 @@ import {
   cn,
   Badge,
   Button,
+  Field,
   InfoNote,
+  Input,
+  Modal,
   PageHeader,
   Panel,
   PanelHeader,
   Segmented,
+  Select,
   StatusDot,
+  Textarea,
 } from '../components/ui'
 import { BalanceChart } from '../components/charts'
 import type { DayPoint, Transaction } from '../types'
@@ -204,8 +209,14 @@ export default function Journey() {
   const { account, journey } = useJourney()
   const journals = useAppStore((state) => state.journals)
   const cashEventsAll = useAppStore((state) => state.cashEvents)
+  const addCashEvent = useAppStore((state) => state.addCashEvent)
   const pushToast = useAppStore((state) => state.pushToast)
   const [filter, setFilter] = useState<LedgerFilter>('all')
+  const [cashModalOpen, setCashModalOpen] = useState(false)
+  const [cashType, setCashType] = useState<'DEPOSIT' | 'WITHDRAWAL'>('DEPOSIT')
+  const [cashAmount, setCashAmount] = useState('')
+  const [cashDate, setCashDate] = useState(todayISO())
+  const [cashNote, setCashNote] = useState('')
   const [expanded, setExpanded] = useState(false)
 
   const { points, transactions, stats, currentBalance } = journey
@@ -351,7 +362,15 @@ export default function Journey() {
           <PanelHeader
             title="Cash movements"
             subtitle="Deposits & withdrawals, separate from P/L"
-            right={<Badge variant="neutral">{cashEvents.length}</Badge>}
+            right={
+              <div className="flex items-center gap-1.5">
+                <Badge variant="neutral">{cashEvents.length}</Badge>
+                <Button variant="secondary" size="sm" onClick={() => setCashModalOpen(true)}>
+                  <Plus size={12} strokeWidth={2} />
+                  Move
+                </Button>
+              </div>
+            }
           />
           <div className="mt-4 flex-1 space-y-1">
             {cashEvents.length === 0 && (
@@ -630,6 +649,78 @@ export default function Journey() {
           Funding snapshot: {fmtMoney(account.initialCapital, account.sourceCurrency)} @ {account.exchangeRate.toLocaleString('en-US')}
         </span>
       </div>
+
+      <Modal
+        open={cashModalOpen}
+        onClose={() => setCashModalOpen(false)}
+        title="Record cash movement"
+        description="Deposits & withdrawals are separate from daily P/L."
+        width="max-w-sm"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setCashModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!cashAmount || Number(cashAmount) <= 0}
+              onClick={() => {
+                const amount = Number(cashAmount.replace(/,/g, ''))
+                if (!amount || amount <= 0) return
+                addCashEvent(account.id, {
+                  id: `ce-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  accountId: account.id,
+                  type: cashType,
+                  amount,
+                  date: cashDate,
+                  note: cashNote.trim() || undefined,
+                })
+                setCashModalOpen(false)
+                setCashAmount('')
+                setCashNote('')
+              }}
+            >
+              {cashType === 'DEPOSIT' ? 'Record deposit' : 'Record withdrawal'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <Segmented
+            value={cashType}
+            onChange={(val) => setCashType(val as 'DEPOSIT' | 'WITHDRAWAL')}
+            options={[
+              { value: 'DEPOSIT', label: 'Deposit' },
+              { value: 'WITHDRAWAL', label: 'Withdrawal' },
+            ]}
+          />
+          <Field label="Amount">
+            <Input
+              type="number"
+              required
+              min={0.01}
+              step="any"
+              value={cashAmount}
+              placeholder="e.g. 500"
+              onChange={(e) => setCashAmount(e.target.value)}
+            />
+          </Field>
+          <Field label="Date">
+            <Input
+              type="date"
+              required
+              value={cashDate}
+              onChange={(e) => setCashDate(e.target.value)}
+            />
+          </Field>
+          <Field label="Note (optional)">
+            <Input
+              value={cashNote}
+              placeholder="Top-up, profit withdrawal, etc."
+              onChange={(e) => setCashNote(e.target.value)}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   )
 }

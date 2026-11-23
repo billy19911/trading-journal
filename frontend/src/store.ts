@@ -35,6 +35,7 @@ interface AppState {
   token: string | null
 
   login: (email: string, pass: string) => Promise<boolean>
+  loginGmail: (email: string) => Promise<boolean>
   register: (name: string, email: string, pass: string) => Promise<boolean>
   logout: () => Promise<void>
   fetchCloudData: () => Promise<void>
@@ -48,6 +49,7 @@ interface AppState {
   updateAccount: (account: Account) => void
   addMilestone: (milestone: Milestone) => void
   removeMilestone: (id: string) => void
+  addCashEvent: (accountId: string, event: CashEvent) => void
   restoreBackup: (backup: BackupPayload) => void
   refreshRate: () => void
   setUsdIdrRate: (rate: number) => void
@@ -77,6 +79,24 @@ function applyTheme(theme: Theme) {
 const initialTheme = typeof document !== 'undefined' ? readTheme() : 'dark'
 if (typeof document !== 'undefined') applyTheme(initialTheme)
 
+export const emptyAccount: Account = {
+  id: '',
+  name: 'Create your first account',
+  broker: '—',
+  accountNumber: '',
+  type: 'Standard',
+  currency: 'USD',
+  centRatio: 1,
+  initialCapital: 0,
+  sourceCurrency: 'USD',
+  exchangeRate: 1,
+  initialBalance: 0,
+  startDate: new Date().toISOString().slice(0, 10),
+  dailyTarget: 1,
+  status: 'Paused',
+  accent: '#3B82F6',
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   accounts: accountsSeed,
   journals: journalsSeed,
@@ -101,6 +121,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       return true
     } catch (error) {
       get().pushToast({ title: 'Sign in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
+      return false
+    }
+  },
+
+  loginGmail: async (email) => {
+    try {
+      const result = await api.loginGmail(email)
+      setApiToken(result.token)
+      set({ apiMode: 'cloud', token: result.token, userEmail: result.user.email })
+      await get().fetchCloudData()
+      get().pushToast({ title: 'Signed in', message: result.user.email, tone: 'success' })
+      return true
+    } catch (error) {
+      get().pushToast({ title: 'Gmail sign-in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
       return false
     }
   },
@@ -131,6 +165,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fetchCloudData: async () => {
+    try {
+      const profile = await api.me()
+      if (profile?.user?.email) {
+        set({ userEmail: profile.user.email })
+      }
+    } catch {
+      /* token may be invalid */
+    }
     const accountResponse = await api.accounts()
     const cloudAccounts = accountResponse.data.map(mapAccount)
     if (cloudAccounts.length === 0) {
@@ -267,6 +309,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           daily_target_percent: account.dailyTarget,
           status: account.status,
         })
+        .then(({ data }) => {
+          const serverId = data.id
+          set((state) => ({
+            accounts: state.accounts.map((a) => (a.id === account.id ? { ...a, id: serverId } : a)),
+            journals: Object.fromEntries(
+              Object.entries(state.journals).map(([k, v]) => [k === account.id ? serverId : k, v]),
+            ),
+            activeAccountId: state.activeAccountId === account.id ? serverId : state.activeAccountId,
+          }))
+        })
         .catch((error) => {
           get().pushToast({
             title: 'Cloud account creation failed',
@@ -347,6 +399,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  addCashEvent: (accountId, event) => {
+    set((state) => ({ cashEvents: [...state.cashEvents, event].sort((a, b) => b.date.localeCompare(a.date)) }))
+    get().pushToast({ title: event.type === 'DEPOSIT' ? 'Deposit recorded' : 'Withdrawal recorded', tone: 'success' })
+    if (get().apiMode === 'cloud') {
+      api.recordTransaction(accountId, {
+        transaction_type: event.type,
+        amount: event.amount,
+        currency_code: get().accounts.find((account) => account.id === accountId)?.currency,
+        transaction_date: event.date,
+        description: event.note,
+        idempotency_key: `frontend-${event.id}`,
+      }).catch((error) => {
+        set((state) => ({ cashEvents: state.cashEvents.filter((item) => item.id !== event.id) }))
+        get().pushToast({ title: 'Cloud cash movement failed', message: error instanceof Error ? error.message : 'Save failed', tone: 'error' })
+      })
+    }
+  },
+
   restoreBackup: (backup) => {
     if (!Array.isArray(backup.accounts) || backup.accounts.length === 0) return
     set({
@@ -409,6 +479,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 }))
 
+if (typeof window !== 'undefined' && getApiToken()) {
+  void useAppStore.getState().fetchCloudData().catch(() => {
+    /* fallback to mock if api is unreachable */
+  })
+}
+
 function existingMessage(entry: JournalEntry): string {
   if (entry.status === 'No Trade') return 'No-trade day saved'
   if (entry.pnl > 0) return 'Profit logged'
@@ -419,7 +495,7 @@ function existingMessage(entry: JournalEntry): string {
 export function useActiveAccount(): Account {
   const accounts = useAppStore((state) => state.accounts)
   const activeId = useAppStore((state) => state.activeAccountId)
-  return accounts.find((account) => account.id === activeId) ?? accounts[0]
+  return accounts.find((account) => account.id === activeId) ?? accounts[0] ?? emptyAccount
 }
 
 export interface SavedScenario {

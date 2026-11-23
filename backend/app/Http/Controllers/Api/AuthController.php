@@ -93,6 +93,56 @@ final class AuthController extends Controller
         ]);
     }
 
+    public function gmail(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'ends_with:gmail.com,googlemail.com'],
+        ]);
+
+        $user = User::firstOrCreate(
+            ['email' => strtolower($validated['email'])],
+            [
+                'name' => ucfirst((string) str($validated['email'])->before('@')),
+                'password' => Hash::make(Str::random(40)),
+                'timezone' => 'Asia/Jakarta',
+                'locale' => 'en',
+            ],
+        );
+
+        if ($user->tradingAccounts()->count() === 0) {
+            $user->tradingAccounts()->create([
+                'id' => (string) Str::uuid(),
+                'account_name' => 'Exness Live',
+                'broker_name' => 'Exness',
+                'account_number' => (string) rand(7000000, 7999999),
+                'account_type' => 'Standard',
+                'currency_code' => 'USD',
+                'source_currency' => 'USD',
+                'cent_ratio' => 1,
+                'initial_capital' => 1000,
+                'initial_exchange_rate' => 1,
+                'initial_balance' => 1000,
+                'starting_date' => now()->toDateString(),
+                'daily_target_percent' => 1.0,
+                'status' => 'Active',
+            ]);
+        }
+
+        $token = $user->createToken('gmail-web')->plainTextToken;
+
+        return response()->json([
+            'message' => 'Gmail sign-in successful',
+            'token' => $token,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'timezone' => $user->timezone,
+                'locale' => $user->locale,
+            ],
+        ]);
+    }
+
     public function logout(Request $request): JsonResponse
     {
         $request->user()?->currentAccessToken()?->delete();

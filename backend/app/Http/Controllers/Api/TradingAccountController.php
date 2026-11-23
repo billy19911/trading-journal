@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TradingAccountResource;
 use App\Models\TradingAccount;
+use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,11 +41,22 @@ final class TradingAccountController extends Controller
         ]);
 
         $account = DB::transaction(function () use ($request, $validated): TradingAccount {
-            return $request->user()->tradingAccounts()->create([
+            $account = $request->user()->tradingAccounts()->create([
                 ...$validated,
                 'id' => (string) Str::uuid(),
                 'status' => $validated['status'] ?? 'Active',
             ]);
+
+            app(LedgerService::class)->record($account, [
+                'transaction_type' => 'INITIAL_CAPITAL',
+                'amount' => $validated['initial_balance'],
+                'currency_code' => $validated['currency_code'],
+                'transaction_date' => $validated['starting_date'],
+                'description' => 'Initial account capital',
+                'idempotency_key' => 'initial-'.$account->id,
+            ]);
+
+            return $account;
         });
 
         return (new TradingAccountResource($account))->response()->setStatusCode(201);

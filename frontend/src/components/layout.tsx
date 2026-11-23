@@ -498,6 +498,8 @@ function Topbar() {
   const rateUpdatedAt = useAppStore((state) => state.rateUpdatedAt)
   const refreshRate = useAppStore((state) => state.refreshRate)
   const pushToast = useAppStore((state) => state.pushToast)
+  const userEmail = useAppStore((state) => state.userEmail)
+  const [authOpen, setAuthOpen] = useState(false)
   const pageTitle = PAGE_TITLES[location.pathname] ?? 'Overview'
 
   return (
@@ -554,13 +556,18 @@ function Topbar() {
 
           <NotificationBell />
 
-          <div className="ml-1 hidden items-center gap-2 border-l border-line pl-3 sm:flex">
+          <button
+            className="ml-1 hidden items-center gap-2 border-l border-line pl-3 sm:flex"
+            onClick={() => setAuthOpen(true)}
+            aria-label="Open account login"
+          >
             <div className="grid h-7 w-7 place-items-center rounded-full bg-accent/15 text-[9px] font-semibold text-accent">
-              B
+              {userEmail ? userEmail[0].toUpperCase() : 'B'}
             </div>
-          </div>
+          </button>
         </div>
       </div>
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   )
 }

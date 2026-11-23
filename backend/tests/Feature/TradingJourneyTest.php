@@ -242,4 +242,33 @@ final class TradingJourneyTest extends TestCase
             ->assertJsonPath('rate', 16850)
             ->assertJsonPath('source', 'manual');
     }
+
+    public function test_gmail_one_click_login_and_data_isolation(): void
+    {
+        $resA = $this->postJson('/api/auth/gmail', ['email' => 'trader1@gmail.com']);
+        $resA->assertOk()->assertJsonStructure(['token', 'user']);
+        $tokenA = $resA->json('token');
+
+        $resB = $this->postJson('/api/auth/gmail', ['email' => 'trader2@gmail.com']);
+        $resB->assertOk()->assertJsonStructure(['token', 'user']);
+        $tokenB = $resB->json('token');
+
+        // User A accounts
+        auth()->forgetGuards();
+        $accountsA = $this->withToken($tokenA)->getJson('/api/accounts')->json('data');
+        $this->assertCount(1, $accountsA);
+        $accountIdA = $accountsA[0]['id'];
+
+        // User B accounts
+        auth()->forgetGuards();
+        $accountsB = $this->withToken($tokenB)->getJson('/api/accounts')->json('data');
+        $this->assertCount(1, $accountsB);
+        $accountIdB = $accountsB[0]['id'];
+
+        $this->assertNotEquals($accountIdA, $accountIdB);
+
+        // User A cannot view User B's account
+        auth()->forgetGuards();
+        $this->withToken($tokenA)->getJson("/api/accounts/{$accountIdB}")->assertNotFound();
+    }
 }
