@@ -1,0 +1,38 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - backend/.env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - laravel_storage:/var/www/html/storage
+    command: >-
+      sh -c "php artisan migrate --force &&
+      php artisan config:cache &&
+      php artisan route:cache &&
+      php artisan view:cache &&
+      supervisord -c /etc/supervisor/conf.d/supervisord.conf"
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trading_journey
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: change-this-password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d trading_journey"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:
+  laravel_storage:
