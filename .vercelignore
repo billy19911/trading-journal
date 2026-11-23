@@ -1,0 +1,9 @@
+backend/
+.git/
+.env
+.env.*
+node_modules/
+backend/vendor/
+backend/storage/
+C:\xampp\
+*.log
