@@ -376,7 +376,7 @@ export default function Overview() {
     <div className="space-y-4 lg:space-y-5">
       <PageHeader
         eyebrow={`Actual journey · ${fmtDate(todayISO(), 'long')}`}
-        title={`${greeting()}, Billy.`}
+        title={`${greeting()}, ${account.name}.`}
         description="This is what actually happened. Every figure on this page is calculated from the Journey ledger — simulations never write here."
         meta={
           <div className="ml-1 flex items-center gap-1.5">
