@@ -39,6 +39,7 @@ interface AppState {
   addJournal: (accountId: string, entry: JournalEntry) => void
   addAccount: (account: Account) => void
   updateAccount: (account: Account) => void
+  deleteAccount: (id: string) => Promise<void>
   addMilestone: (milestone: Milestone) => void
   removeMilestone: (id: string) => void
   addCashEvent: (accountId: string, event: CashEvent) => void
@@ -304,6 +305,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         account_name: account.name,
         broker_name: account.broker,
         account_number: account.accountNumber,
+        account_type: account.type,
+        currency_code: account.currency,
+        source_currency: account.sourceCurrency,
+        cent_ratio: account.centRatio,
+        initial_capital: account.initialCapital,
+        initial_exchange_rate: account.exchangeRate,
+        initial_balance: account.initialBalance,
+        starting_date: account.startDate,
         daily_target_percent: account.dailyTarget,
         status: account.status,
       })
@@ -314,6 +323,31 @@ export const useAppStore = create<AppState>((set, get) => ({
           tone: 'error',
         })
       })
+  },
+
+  deleteAccount: async (id) => {
+    try {
+      await api.deleteAccount(id)
+      set((state) => {
+        const nextJournals = { ...state.journals }
+        delete nextJournals[id]
+        const nextAccounts = state.accounts.filter((item) => item.id !== id)
+        return {
+          accounts: nextAccounts,
+          journals: nextJournals,
+          cashEvents: state.cashEvents.filter((item) => item.accountId !== id),
+          milestones: state.milestones.filter((item) => item.accountId !== id),
+          activeAccountId: state.activeAccountId === id ? (nextAccounts[0]?.id ?? '') : state.activeAccountId,
+        }
+      })
+      get().pushToast({ title: 'Account deleted', tone: 'success' })
+    } catch (error) {
+      get().pushToast({
+        title: 'Cloud delete failed',
+        message: error instanceof Error ? error.message : 'Delete failed',
+        tone: 'error',
+      })
+    }
   },
 
   addMilestone: (milestone) => {

@@ -77,11 +77,48 @@ final class TradingAccountController extends Controller
             'account_name' => ['sometimes', 'string', 'max:255'],
             'broker_name' => ['sometimes', 'string', 'max:255'],
             'account_number' => ['nullable', 'string', 'max:100'],
+            'account_type' => ['sometimes', 'string', 'max:50'],
+            'currency_code' => ['sometimes', 'string', 'size:3'],
+            'source_currency' => ['sometimes', 'string', 'size:3'],
+            'cent_ratio' => ['sometimes', 'numeric', 'gt:0'],
+            'initial_capital' => ['sometimes', 'numeric', 'gt:0'],
+            'initial_exchange_rate' => ['sometimes', 'numeric', 'gt:0'],
+            'initial_balance' => ['sometimes', 'numeric', 'gt:0'],
+            'starting_date' => ['sometimes', 'date'],
             'daily_target_percent' => ['sometimes', 'numeric', 'between:0.1,10'],
             'status' => ['sometimes', 'string', 'in:Active,Paused'],
         ]);
 
-        $tradingAccount->update($validated);
+        DB::transaction(function () use ($tradingAccount, $validated): void {
+            $tradingAccount->update($validated);
+
+            if (isset($validated['initial_balance'])) {
+                $tradingAccount->transactions()
+                    ->where('transaction_type', 'INITIAL_CAPITAL')
+                    ->update([
+                        'amount' => $validated['initial_balance'],
+                        'currency_code' => $validated['currency_code'] ?? $tradingAccount->currency_code,
+                        'transaction_date' => $validated['starting_date'] ?? $tradingAccount->starting_date,
+                    ]);
+
+                // Update opening and closing balances of journals if any exist
+                $journals = $tradingAccount->journals()->orderBy('journal_date', 'asc')->get();
+                if ($journals->isNotEmpty()) {
+                    $runningBalance = (float) $validated['initial_balance'];
+                    foreach ($journals as $journal) {
+                        $pnl = (float) $journal->daily_profit_loss;
+                        $closing = $runningBalance + $pnl;
+                        $dailyReturn = $runningBalance == 0.0 ? 0.0 : ($pnl / $runningBalance) * 100;
+                        $journal->update([
+                            'opening_balance' => $runningBalance,
+                            'closing_balance' => $closing,
+                            'daily_return' => $dailyReturn,
+                        ]);
+                        $runningBalance = $closing;
+                    }
+                }
+            }
+        });
 
         return new TradingAccountResource($tradingAccount->refresh());
     }

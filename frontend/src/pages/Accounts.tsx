@@ -12,6 +12,7 @@ import {
   Landmark,
   Pencil,
   Plus,
+  Trash2,
   RefreshCw,
   ShieldCheck,
   Wallet,
@@ -229,6 +230,7 @@ interface AccountFormState {
   type: AccountType
   sourceCurrency: CurrencyCode
   capital: string
+  exchangeRate: string
   dailyTarget: string
   startDate: string
   centRatio: string
@@ -248,6 +250,7 @@ function AccountModal({
   const usdIdrRate = useAppStore((state) => state.usdIdrRate)
   const addAccount = useAppStore((state) => state.addAccount)
   const updateAccount = useAppStore((state) => state.updateAccount)
+  const deleteAccount = useAppStore((state) => state.deleteAccount)
   const pushToast = useAppStore((state) => state.pushToast)
 
   const [form, setForm] = useState<AccountFormState>({
@@ -257,6 +260,7 @@ function AccountModal({
     type: account?.type ?? 'Standard',
     sourceCurrency: account?.sourceCurrency ?? 'IDR',
     capital: account ? String(account.initialCapital) : '',
+    exchangeRate: account ? String(account.exchangeRate) : String(usdIdrRate),
     dailyTarget: account ? String(account.dailyTarget) : '1',
     startDate: account?.startDate ?? todayISO(),
     centRatio: account ? String(account.centRatio) : '100',
@@ -270,11 +274,12 @@ function AccountModal({
 
   const capital = Number(form.capital.replace(/,/g, '')) || 0
   const ratio = form.type === 'Cent' ? Number(form.centRatio) || 100 : 1
+  const exchangeRate = Number(form.exchangeRate.replace(/,/g, '')) || 0
   const targetCurrency: CurrencyCode = form.type === 'Cent' ? 'USC' : 'USD'
-  const usdValue = convertCapital(capital, form.sourceCurrency, 'USD', usdIdrRate, ratio)
-  const balance = convertCapital(capital, form.sourceCurrency, targetCurrency, usdIdrRate, ratio)
+  const usdValue = convertCapital(capital, form.sourceCurrency, 'USD', exchangeRate, ratio)
+  const balance = convertCapital(capital, form.sourceCurrency, targetCurrency, exchangeRate, ratio)
   const target = Number(form.dailyTarget) || 0
-  const overviewBalance = account ? account.initialBalance : balance
+  const overviewBalance = balance
 
   const nameError = form.name.trim().length < 2
   const brokerError = form.broker.trim().length < 2
@@ -282,9 +287,16 @@ function AccountModal({
   const capitalError = capital <= 0
   const targetError = target <= 0 || target > 10
   const ratioError = form.type === 'Cent' && (Number(form.centRatio) <= 0 || Number(form.centRatio) > 1000)
+  const rateError = form.sourceCurrency === 'IDR' && exchangeRate <= 0
   const dateError = !/^\d{4}-\d{2}-\d{2}$/.test(form.startDate)
 
-  const valid = !nameError && !brokerError && !numberError && !capitalError && !targetError && !ratioError && !dateError
+  const valid = !nameError && !brokerError && !numberError && !capitalError && !targetError && !ratioError && !rateError && !dateError
+
+  const remove = async () => {
+    if (!account || !window.confirm(`Delete ${account.name}? This removes its journals, transactions, and milestones.`)) return
+    await deleteAccount(account.id)
+    onClose()
+  }
 
   const save = () => {
     setSubmitted(true)
@@ -303,6 +315,14 @@ function AccountModal({
         name: form.name.trim(),
         broker: form.broker.trim(),
         accountNumber: form.accountNumber.trim(),
+        type: form.type,
+        currency: targetCurrency,
+        centRatio: ratio,
+        initialCapital: capital,
+        sourceCurrency: form.sourceCurrency,
+        exchangeRate: form.sourceCurrency === 'IDR' ? exchangeRate : 1,
+        initialBalance: balance,
+        startDate: form.startDate,
         dailyTarget: target,
         status: form.status,
       })
@@ -317,7 +337,7 @@ function AccountModal({
         centRatio: ratio,
         initialCapital: capital,
         sourceCurrency: form.sourceCurrency,
-        exchangeRate: form.sourceCurrency === 'IDR' ? usdIdrRate : 1,
+        exchangeRate: form.sourceCurrency === 'IDR' ? exchangeRate : 1,
         initialBalance: balance,
         startDate: form.startDate,
         dailyTarget: target,
@@ -335,7 +355,7 @@ function AccountModal({
       title={mode === 'edit' ? `Edit ${account?.name}` : 'Create account'}
       description={
         mode === 'edit'
-          ? 'Identity and plan fields can change. Funding history stays immutable.'
+          ? 'Edit account details, funding amount, and exchange-rate snapshot.'
           : 'Set up a broker account and fund it through USD. The snapshot rate is preserved.'
       }
       width="max-w-2xl"
@@ -344,6 +364,18 @@ function AccountModal({
           <span className="hidden text-[9.5px] text-faint sm:block">
             {mode === 'edit' ? 'Balances remain ledger-derived' : 'Currency conversion is applied on create'}
           </span>
+          <div className="flex items-center gap-2">
+            {mode === 'edit' && (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 size={12.5} strokeWidth={1.6} />}
+                onClick={() => void remove()}
+              >
+                Delete account
+              </Button>
+            )}
+          </div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
@@ -410,13 +442,11 @@ function AccountModal({
             <Field label="Account type" hint="Cent = USC">
               <Select
                 value={form.type}
-                disabled={mode === 'edit'}
                 onChange={(event) => {
                   const nextType = event.target.value as AccountType
                   update('type', nextType)
                   if (nextType === 'Cent') update('centRatio', '100')
                 }}
-                className={mode === 'edit' ? 'opacity-60' : ''}
               >
                 {(['Standard', 'Cent', 'Micro', 'Custom'] as AccountType[]).map((type) => (
                   <option key={type} value={type}>
@@ -427,13 +457,11 @@ function AccountModal({
             </Field>
             <Field
               label="Source currency"
-              hint={mode === 'edit' ? 'Locked after funding' : 'Funding currency'}
+              hint={form.sourceCurrency === 'IDR' ? 'Converted via USD/IDR' : 'Direct USD'}
             >
               <Select
                 value={form.sourceCurrency}
-                disabled={mode === 'edit'}
                 onChange={(event) => update('sourceCurrency', event.target.value as CurrencyCode)}
-                className={mode === 'edit' ? 'opacity-60' : ''}
               >
                 {SOURCE_CURRENCIES.map((currency) => (
                   <option key={currency} value={currency}>
@@ -456,13 +484,8 @@ function AccountModal({
                   inputMode="decimal"
                   placeholder="1,670,000"
                   value={form.capital}
-                  readOnly={mode === 'edit'}
                   onChange={(event) => update('capital', event.target.value)}
-                  className={cn(
-                    'num pr-12',
-                    mode === 'edit' && 'bg-elevated/40 text-muted',
-                    submitted && capitalError && mode === 'create' && 'border-loss/60',
-                  )}
+                  className={cn('num pr-12', submitted && capitalError && 'border-loss/60')}
                 />
                 <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[9px] uppercase tracking-[0.1em] text-faint">
                   {form.sourceCurrency}
@@ -488,25 +511,42 @@ function AccountModal({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Funding exchange rate"
+              htmlFor="acc-rate"
+              hint={form.sourceCurrency === 'IDR' ? 'IDR per 1 USD' : 'Not required for USD'}
+            >
+              <Input
+                id="acc-rate"
+                inputMode="decimal"
+                value={form.exchangeRate}
+                disabled={form.sourceCurrency !== 'IDR'}
+                onChange={(event) => update('exchangeRate', event.target.value)}
+                className={cn(
+                  'num',
+                  form.sourceCurrency !== 'IDR' && 'bg-elevated/40 text-muted opacity-70',
+                  submitted && rateError && 'border-loss/60',
+                )}
+              />
+            </Field>
             <Field label="Start date" htmlFor="acc-start">
               <Input
                 id="acc-start"
                 type="date"
                 value={form.startDate}
-                readOnly={mode === 'edit'}
                 onChange={(event) => update('startDate', event.target.value)}
-                className={cn('num', mode === 'edit' && 'bg-elevated/40 text-muted')}
+                className="num"
               />
             </Field>
             <Field label="Cent ratio" hint="USC per USD">
               <Input
                 inputMode="numeric"
                 value={form.type === 'Cent' ? form.centRatio : '1'}
-                disabled={form.type !== 'Cent' || mode === 'edit'}
+                disabled={form.type !== 'Cent'}
                 onChange={(event) => update('centRatio', event.target.value)}
                 className={cn(
                   'num',
-                  (form.type !== 'Cent' || mode === 'edit') && 'bg-elevated/40 text-muted opacity-70',
+                  form.type !== 'Cent' && 'bg-elevated/40 text-muted opacity-70',
                   submitted && ratioError && 'border-loss/60',
                 )}
               />

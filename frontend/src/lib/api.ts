@@ -176,6 +176,10 @@ export const api = {
     return request(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
 
+  async deleteAccount(id: string): Promise<void> {
+    await request(`/accounts/${id}`, { method: 'DELETE' })
+  },
+
   async journals(accountId: string): Promise<{ data: ApiJournal[] }> {
     return request(`/accounts/${accountId}/journals`)
   },

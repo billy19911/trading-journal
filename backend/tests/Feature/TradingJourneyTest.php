@@ -97,6 +97,26 @@ final class TradingJourneyTest extends TestCase
 
         $this->actingAs($user2)->getJson("/api/accounts/{$accountId}")
             ->assertNotFound();
+
+        $this->actingAs($user1)->patchJson("/api/accounts/{$accountId}", [
+            'initial_capital' => 2000000,
+            'initial_exchange_rate' => 17000,
+            'initial_balance' => 117.6470588235,
+        ])->assertOk()
+            ->assertJsonPath('data.initial_capital', '2000000.000000000000')
+            ->assertJsonPath('data.initial_balance', '117.647058823500');
+
+        $this->actingAs($user1)->patchJson("/api/accounts/{$accountId}", [
+            'account_name' => 'Updated account',
+        ])->assertOk();
+
+        $this->actingAs($user2)->deleteJson("/api/accounts/{$accountId}")
+            ->assertNotFound();
+
+        $this->actingAs($user1)->deleteJson("/api/accounts/{$accountId}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('trading_accounts', ['id' => $accountId]);
     }
 
     public function test_journal_entry_updates_balance_and_records_ledger(): void
