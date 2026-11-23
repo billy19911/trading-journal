@@ -207,8 +207,19 @@ export const api = {
     await request(`/accounts/${accountId}/milestones/${milestoneId}`, { method: 'DELETE' })
   },
 
-  async latestRate(): Promise<{ base: string; quote: string; rate: number; source: string; updated_at: string }> {
-    return request('/exchange-rates/latest?base=USD&quote=IDR')
+  async latestRate(force = false): Promise<{
+    base: string
+    quote: string
+    rate: number
+    mode: 'manual' | 'auto'
+    source: string
+    updated_at: string
+  }> {
+    return request(`/exchange-rates/latest?base=USD&quote=IDR${force ? '&force=1' : ''}`)
+  },
+
+  async setRateMode(mode: 'manual' | 'auto'): Promise<ApiResponse<{ mode: 'manual' | 'auto'; provider: string; manual_rate: number | null }>> {
+    return request('/exchange-rates/mode', { method: 'POST', body: JSON.stringify({ mode }) })
   },
 
   async saveRate(rate: number): Promise<{ data: { rate: number } }> {

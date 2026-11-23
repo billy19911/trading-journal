@@ -191,8 +191,10 @@ export default function Settings() {
   const theme = useAppStore((state) => state.theme)
   const setTheme = useAppStore((state) => state.setTheme)
   const rate = useAppStore((state) => state.usdIdrRate)
+  const rateMode = useAppStore((state) => state.rateMode)
   const rateUpdatedAt = useAppStore((state) => state.rateUpdatedAt)
   const setRate = useAppStore((state) => state.setUsdIdrRate)
+  const setRateMode = useAppStore((state) => state.setRateMode)
   const refreshRate = useAppStore((state) => state.refreshRate)
   const pushToast = useAppStore((state) => state.pushToast)
   const accounts = useAppStore((state) => state.accounts)
@@ -208,8 +210,7 @@ export default function Settings() {
     'tj-display-currency',
     'account',
   )
-  const [rateProvider, setRateProvider] = useLocalChoice<string>('tj-rate-provider', 'manual')
-  const [rateMode, setRateMode] = useLocalChoice<'manual' | 'automatic'>('tj-rate-mode', 'manual')
+  const [rateProvider, setRateProvider] = useLocalChoice<string>('tj-rate-provider', 'auto')
   const [refreshInterval, setRefreshInterval] = useLocalChoice<string>('tj-rate-interval', 'daily')
   const [rateDraft, setRateDraft] = useState(String(rate))
   const [autoSync, setAutoSync] = useLocalChoice<'on' | 'off'>('tj-auto-sync', 'on')
@@ -452,15 +453,9 @@ export default function Settings() {
               description="Manual for the prototype. Auto refresh needs a provider."
             >
               <Segmented
-                value={rateMode}
+                value={rateMode === 'auto' ? 'automatic' : 'manual'}
                 onChange={(value) => {
-                  setRateMode(value)
-                  if (value === 'automatic') {
-                    pushToast({
-                      title: 'Automatic mode queued',
-                      message: 'Provider sync arrives with the backend. Manual rate stays active.',
-                    })
-                  }
+                  void setRateMode(value === 'automatic' ? 'auto' : 'manual')
                 }}
                 size="sm"
                 options={[
@@ -473,16 +468,16 @@ export default function Settings() {
             <SectionRow
               icon={<Globe size={13} strokeWidth={1.5} />}
               title="Provider"
-              description="Where the automatic rate would come from."
+              description="Live market provider for USD/IDR conversion."
             >
               <Select
                 value={rateProvider}
                 onChange={(event) => setRateProvider(event.target.value)}
                 className="w-[142px] py-1.5 text-[10px]"
               >
-                <option value="manual">Manual entry</option>
+                <option value="auto">Live Exchange (Open ER)</option>
                 <option value="exchangerate">exchangerate.host</option>
-                <option value="bank">Bank Indonesia</option>
+                <option value="bank">Bank Indonesia (Ref)</option>
               </Select>
             </SectionRow>
 
@@ -506,6 +501,7 @@ export default function Settings() {
               <Field label="Manual rate" className="flex-1">
                 <Input
                   inputMode="decimal"
+                  disabled={rateMode === 'auto'}
                   value={rateDraft}
                   onChange={(event) => setRateDraft(event.target.value)}
                   className="num text-[11.5px]"

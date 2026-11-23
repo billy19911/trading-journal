@@ -43,4 +43,5 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->parameters(['scenarios' => 'simulationScenario']);
 
     Route::post('exchange-rates/manual', [ExchangeRateController::class, 'storeManual']);
+    Route::post('exchange-rates/mode', [ExchangeRateController::class, 'setMode']);
 });

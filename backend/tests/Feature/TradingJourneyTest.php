@@ -244,6 +244,24 @@ final class TradingJourneyTest extends TestCase
             ->assertJsonPath('source', 'manual');
     }
 
+    public function test_automatic_exchange_rate_fetches_live_provider_rate(): void
+    {
+        Http::fake([
+            'https://open.er-api.com/v6/latest/USD' => Http::response([
+                'result' => 'success',
+                'rates' => ['IDR' => 16542.75],
+            ]),
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->getJson('/api/exchange-rates/latest?base=USD&quote=IDR&force=1');
+
+        $response->assertOk()
+            ->assertJsonPath('rate', 16542.75)
+            ->assertJsonPath('source', 'open.er-api')
+            ->assertJsonPath('mode', 'auto');
+    }
+
     public function test_gmail_one_click_login_and_data_isolation(): void
     {
         Http::fake([

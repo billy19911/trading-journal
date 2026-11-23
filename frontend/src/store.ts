@@ -22,6 +22,7 @@ interface AppState {
   activeAccountId: string
   theme: Theme
   usdIdrRate: number
+  rateMode: 'manual' | 'auto'
   rateUpdatedAt: string
   toasts: Toast[]
   userEmail: string | null
@@ -42,8 +43,9 @@ interface AppState {
   removeMilestone: (id: string) => void
   addCashEvent: (accountId: string, event: CashEvent) => void
   restoreBackup: (backup: BackupPayload) => void
-  refreshRate: () => void
+  refreshRate: () => Promise<void>
   setUsdIdrRate: (rate: number) => void
+  setRateMode: (mode: 'manual' | 'auto') => Promise<void>
   pushToast: (toast: Omit<Toast, 'id' | 'tone'> & { tone?: ToastTone }) => void
   dismissToast: (id: string) => void
 }
@@ -96,6 +98,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeAccountId: '',
   theme: initialTheme,
   usdIdrRate: initialUsdIdrRate,
+  rateMode: 'manual',
   rateUpdatedAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
   toasts: [],
   userEmail: null,
@@ -139,6 +142,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ token: null, userEmail: null, ready: true })
       return
     }
+    void api.latestRate().then((rateRes) => {
+      set({ usdIdrRate: rateRes.rate, rateMode: rateRes.mode, rateUpdatedAt: rateRes.updated_at })
+    }).catch(() => {
+      /* ignore */
+    })
+
     const accountResponse = await api.accounts()
     const cloudAccounts = accountResponse.data.map(mapAccount)
     if (cloudAccounts.length === 0) {
@@ -188,6 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeAccountId: cloudAccounts[0].id,
       ready: true,
     })
+
   },
 
   setActiveAccount: (id) => set({ activeAccountId: id }),
@@ -378,17 +388,62 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  refreshRate: () => {
-    set({ rateUpdatedAt: new Date().toISOString() })
-    get().pushToast({
-      title: 'Exchange rate refreshed',
-      message: `1 USD = ${get().usdIdrRate.toLocaleString('en-US')} IDR`,
-      tone: 'success',
-    })
+  refreshRate: async () => {
+    try {
+      const result = await api.latestRate(true)
+      set({
+        usdIdrRate: result.rate,
+        rateMode: result.mode,
+        rateUpdatedAt: result.updated_at,
+      })
+      get().pushToast({
+        title: 'Exchange rate updated',
+        message: `1 USD = ${result.rate.toLocaleString('en-US')} IDR (${result.source})`,
+        tone: 'success',
+      })
+    } catch (error) {
+      get().pushToast({
+        title: 'Rate update failed',
+        message: error instanceof Error ? error.message : 'API unavailable',
+        tone: 'error',
+      })
+    }
+  },
+
+  setRateMode: async (mode) => {
+    set({ rateMode: mode })
+    try {
+      await api.setRateMode(mode)
+      if (mode === 'auto') {
+        const result = await api.latestRate(true)
+        set({
+          usdIdrRate: result.rate,
+          rateMode: 'auto',
+          rateUpdatedAt: result.updated_at,
+        })
+        get().pushToast({
+          title: 'Live rate activated',
+          message: `1 USD = ${result.rate.toLocaleString('en-US')} IDR (live)`,
+          tone: 'success',
+        })
+      } else {
+        get().pushToast({
+          title: 'Manual rate activated',
+          message: `1 USD = ${get().usdIdrRate.toLocaleString('en-US')} IDR`,
+          tone: 'success',
+        })
+      }
+    } catch (error) {
+      get().pushToast({
+        title: 'Mode update failed',
+        message: error instanceof Error ? error.message : 'Failed to update rate mode',
+        tone: 'error',
+      })
+    }
   },
 
   setUsdIdrRate: (rate) => {
-    set({ usdIdrRate: rate, rateUpdatedAt: new Date().toISOString() })
+    set({ usdIdrRate: rate, rateMode: 'manual', rateUpdatedAt: new Date().toISOString() })
     get().pushToast({
       title: 'Manual rate saved',
       message: `1 USD = ${rate.toLocaleString('en-US')} IDR`,
