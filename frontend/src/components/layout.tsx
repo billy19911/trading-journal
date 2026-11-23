@@ -290,8 +290,6 @@ function AccountSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 function Sidebar() {
-  const pushToast = useAppStore((state) => state.pushToast)
-  const apiMode = useAppStore((state) => state.apiMode)
   const userEmail = useAppStore((state) => state.userEmail)
   const [authOpen, setAuthOpen] = useState(false)
 
@@ -372,12 +370,12 @@ function Sidebar() {
           className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-[9.5px] text-muted transition-colors hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
-            <StatusDot tone={apiMode === 'cloud' ? 'profit' : 'neutral'} pulse={apiMode === 'cloud'} />
-            {apiMode === 'cloud' ? 'API connected' : 'Mock data active'}
+            <StatusDot tone="profit" pulse />
+            API connected
           </span>
           <span className="flex items-center gap-1 text-faint">
             <Cloud size={11} strokeWidth={1.5} />
-            {apiMode === 'cloud' ? 'Cloud' : 'Demo'}
+            Cloud
           </span>
         </button>
 
@@ -390,10 +388,10 @@ function Sidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[10.5px] font-medium text-ink">
-              {userEmail ?? 'Trader · Local'}
+              {userEmail ?? 'Trader'}
             </div>
             <div className="text-[8.5px] uppercase tracking-[0.12em] text-faint">
-              {apiMode === 'cloud' ? 'Laravel backend' : 'Demo workspace'}
+              Laravel API
             </div>
           </div>
           <IconButton
@@ -709,17 +707,6 @@ function MobileNav() {
 
 export default function AppShell() {
   const location = useLocation()
-  const apiMode = useAppStore((state) => state.apiMode)
-  const token = useAppStore((state) => state.token)
-  const fetchCloudData = useAppStore((state) => state.fetchCloudData)
-
-  useEffect(() => {
-    if (apiMode === 'cloud' && token) {
-      void fetchCloudData().catch(() => {
-        /* token expired or backend offline */
-      })
-    }
-  }, [apiMode, token, fetchCloudData])
 
   return (
     <div className="min-h-dvh bg-bg text-ink">

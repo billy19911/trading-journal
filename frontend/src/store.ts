@@ -2,13 +2,7 @@ import { create } from 'zustand'
 import type { Account, CashEvent, JournalEntry, Milestone, SimParams } from './types'
 import type { BackupPayload } from './lib/export'
 import { api, getApiToken, mapAccount, setApiToken } from './lib/api'
-import {
-  accountsSeed,
-  cashEventsSeed,
-  initialUsdIdrRate,
-  journalsSeed,
-  milestonesSeed,
-} from './data/mock'
+import { initialUsdIdrRate } from './data/mock'
 
 export type Theme = 'dark' | 'light'
 export type ToastTone = 'default' | 'success' | 'error'
@@ -30,16 +24,13 @@ interface AppState {
   usdIdrRate: number
   rateUpdatedAt: string
   toasts: Toast[]
-  apiMode: 'mock' | 'cloud'
   userEmail: string | null
   token: string | null
+  ready: boolean
 
-  login: (email: string, pass: string) => Promise<boolean>
-  loginGmail: (email: string) => Promise<boolean>
-  register: (name: string, email: string, pass: string) => Promise<boolean>
+  loginGoogle: (credential: string) => Promise<boolean>
   logout: () => Promise<void>
   fetchCloudData: () => Promise<void>
-  setApiMode: (mode: 'mock' | 'cloud') => void
 
   setActiveAccount: (id: string) => void
   setTheme: (theme: Theme) => void
@@ -98,57 +89,29 @@ export const emptyAccount: Account = {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  accounts: accountsSeed,
-  journals: journalsSeed,
-  cashEvents: cashEventsSeed,
-  milestones: milestonesSeed,
-  activeAccountId: accountsSeed[0].id,
+  accounts: [],
+  journals: {},
+  cashEvents: [],
+  milestones: [],
+  activeAccountId: '',
   theme: initialTheme,
   usdIdrRate: initialUsdIdrRate,
   rateUpdatedAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
   toasts: [],
-  apiMode: getApiToken() ? 'cloud' : 'mock',
   userEmail: null,
   token: getApiToken(),
+  ready: false,
 
-  login: async (email, pass) => {
-    try {
-      const result = await api.login({ email, password: pass, device_name: 'Trading Journey web' })
-      setApiToken(result.token)
-      set({ apiMode: 'cloud', token: result.token, userEmail: result.user.email })
-      await get().fetchCloudData()
-      get().pushToast({ title: 'Signed in', message: result.user.email, tone: 'success' })
-      return true
-    } catch (error) {
-      get().pushToast({ title: 'Sign in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
-      return false
-    }
-  },
-
-  loginGmail: async (credential) => {
+  loginGoogle: async (credential) => {
     try {
       const result = await api.loginGmail(credential)
       setApiToken(result.token)
-      set({ apiMode: 'cloud', token: result.token, userEmail: result.user.email })
+      set({ token: result.token, userEmail: result.user.email })
       await get().fetchCloudData()
       get().pushToast({ title: 'Signed in with Google', message: result.user.email, tone: 'success' })
       return true
     } catch (error) {
       get().pushToast({ title: 'Google sign-in failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
-      return false
-    }
-  },
-
-  register: async (name, email, pass) => {
-    try {
-      const result = await api.register({ name, email, password: pass })
-      setApiToken(result.token)
-      set({ apiMode: 'cloud', token: result.token, userEmail: result.user.email })
-      await get().fetchCloudData()
-      get().pushToast({ title: 'Account created', message: 'Cloud mode is active.', tone: 'success' })
-      return true
-    } catch (error) {
-      get().pushToast({ title: 'Registration failed', message: error instanceof Error ? error.message : 'API unavailable', tone: 'error' })
       return false
     }
   },
@@ -160,8 +123,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       /* clear local token even when API is unavailable */
     }
     setApiToken(null)
-    set({ apiMode: 'mock', token: null, userEmail: null, accounts: accountsSeed, journals: journalsSeed, cashEvents: cashEventsSeed, milestones: milestonesSeed, activeAccountId: accountsSeed[0].id })
-    get().pushToast({ title: 'Signed out', message: 'Showing mock data.', tone: 'success' })
+    set({ token: null, userEmail: null, accounts: [], journals: {}, cashEvents: [], milestones: [], activeAccountId: '', ready: false })
+    get().pushToast({ title: 'Signed out', tone: 'success' })
   },
 
   fetchCloudData: async () => {
@@ -171,12 +134,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ userEmail: profile.user.email })
       }
     } catch {
-      /* token may be invalid */
+      // token invalid — force logout
+      setApiToken(null)
+      set({ token: null, userEmail: null, ready: true })
+      return
     }
     const accountResponse = await api.accounts()
     const cloudAccounts = accountResponse.data.map(mapAccount)
     if (cloudAccounts.length === 0) {
-      set({ accounts: [], journals: {}, cashEvents: [], milestones: [], activeAccountId: '' })
+      set({ accounts: [], journals: {}, cashEvents: [], milestones: [], activeAccountId: '', ready: true })
       return
     }
     const accountData = await Promise.all(cloudAccounts.map(async (account) => {
@@ -220,18 +186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       cashEvents: accountData.flatMap((item) => item.cashEvents),
       milestones: accountData.flatMap((item) => item.milestones),
       activeAccountId: cloudAccounts[0].id,
-    })
-  },
-
-  setApiMode: (mode) => {
-    if (mode === 'mock') {
-      set({ apiMode: mode, accounts: accountsSeed, journals: journalsSeed, cashEvents: cashEventsSeed, milestones: milestonesSeed, activeAccountId: accountsSeed[0].id })
-      return
-    }
-    set({ apiMode: mode })
-    void get().fetchCloudData().catch(() => {
-      get().pushToast({ title: 'Cloud unavailable', message: 'Run Laravel API on http://127.0.0.1:8000.', tone: 'error' })
-      set({ apiMode: 'mock' })
+      ready: true,
     })
   },
 
@@ -263,22 +218,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       message: `${entry.date} · ${entry.status}`,
       tone: 'success',
     })
-    if (get().apiMode === 'cloud') {
-      api
-        .saveJournal(accountId, {
-          journal_date: entry.date,
-          daily_profit_loss: entry.pnl,
-          trading_status: entry.status,
-          notes: entry.notes,
+    api
+      .saveJournal(accountId, {
+        journal_date: entry.date,
+        daily_profit_loss: entry.pnl,
+        trading_status: entry.status,
+        notes: entry.notes,
+      })
+      .catch((error) => {
+        get().pushToast({
+          title: 'Cloud sync failed',
+          message: error instanceof Error ? error.message : 'Save failed',
+          tone: 'error',
         })
-        .catch((error) => {
-          get().pushToast({
-            title: 'Cloud sync failed',
-            message: error instanceof Error ? error.message : 'Save failed',
-            tone: 'error',
-          })
-        })
-    }
+      })
   },
 
   addAccount: (account) => {
@@ -292,41 +245,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       message: `${account.name} · ${account.currency}`,
       tone: 'success',
     })
-    if (get().apiMode === 'cloud') {
-      api
-        .createAccount({
-          account_name: account.name,
-          broker_name: account.broker,
-          account_number: account.accountNumber,
-          account_type: account.type,
-          currency_code: account.currency,
-          source_currency: account.sourceCurrency,
-          cent_ratio: account.centRatio,
-          initial_capital: account.initialCapital,
-          initial_exchange_rate: account.exchangeRate,
-          initial_balance: account.initialBalance,
-          starting_date: account.startDate,
-          daily_target_percent: account.dailyTarget,
-          status: account.status,
+    api
+      .createAccount({
+        account_name: account.name,
+        broker_name: account.broker,
+        account_number: account.accountNumber,
+        account_type: account.type,
+        currency_code: account.currency,
+        source_currency: account.sourceCurrency,
+        cent_ratio: account.centRatio,
+        initial_capital: account.initialCapital,
+        initial_exchange_rate: account.exchangeRate,
+        initial_balance: account.initialBalance,
+        starting_date: account.startDate,
+        daily_target_percent: account.dailyTarget,
+        status: account.status,
+      })
+      .then(({ data }) => {
+        const serverId = data.id
+        set((state) => ({
+          accounts: state.accounts.map((a) => (a.id === account.id ? { ...a, id: serverId } : a)),
+          journals: Object.fromEntries(
+            Object.entries(state.journals).map(([k, v]) => [k === account.id ? serverId : k, v]),
+          ),
+          activeAccountId: state.activeAccountId === account.id ? serverId : state.activeAccountId,
+        }))
+      })
+      .catch((error) => {
+        get().pushToast({
+          title: 'Cloud account creation failed',
+          message: error instanceof Error ? error.message : 'Save failed',
+          tone: 'error',
         })
-        .then(({ data }) => {
-          const serverId = data.id
-          set((state) => ({
-            accounts: state.accounts.map((a) => (a.id === account.id ? { ...a, id: serverId } : a)),
-            journals: Object.fromEntries(
-              Object.entries(state.journals).map(([k, v]) => [k === account.id ? serverId : k, v]),
-            ),
-            activeAccountId: state.activeAccountId === account.id ? serverId : state.activeAccountId,
-          }))
-        })
-        .catch((error) => {
-          get().pushToast({
-            title: 'Cloud account creation failed',
-            message: error instanceof Error ? error.message : 'Save failed',
-            tone: 'error',
-          })
-        })
-    }
+      })
   },
 
   updateAccount: (account) => {
@@ -338,57 +289,53 @@ export const useAppStore = create<AppState>((set, get) => ({
       message: `${account.name} · ${account.status}`,
       tone: 'success',
     })
-    if (get().apiMode === 'cloud') {
-      api
-        .updateAccount(account.id, {
-          account_name: account.name,
-          broker_name: account.broker,
-          account_number: account.accountNumber,
-          daily_target_percent: account.dailyTarget,
-          status: account.status,
+    api
+      .updateAccount(account.id, {
+        account_name: account.name,
+        broker_name: account.broker,
+        account_number: account.accountNumber,
+        daily_target_percent: account.dailyTarget,
+        status: account.status,
+      })
+      .catch((error) => {
+        get().pushToast({
+          title: 'Cloud account update failed',
+          message: error instanceof Error ? error.message : 'Save failed',
+          tone: 'error',
         })
-        .catch((error) => {
-          get().pushToast({
-            title: 'Cloud account update failed',
-            message: error instanceof Error ? error.message : 'Save failed',
-            tone: 'error',
-          })
-        })
-    }
+      })
   },
 
   addMilestone: (milestone) => {
     set((state) => ({ milestones: [...state.milestones, milestone] }))
     get().pushToast({ title: 'Milestone added', tone: 'success' })
-    if (get().apiMode === 'cloud') {
-      api
-        .createMilestone(milestone.accountId, {
-          target_balance: milestone.target,
-          currency_code: milestone.currency,
+    api
+      .createMilestone(milestone.accountId, {
+        target_balance: milestone.target,
+        currency_code: milestone.currency,
+      })
+      .then(({ data }) => {
+        set((state) => ({
+          milestones: state.milestones.map((item) =>
+            item.id === milestone.id ? { ...item, id: data.id } : item,
+          ),
+        }))
+      })
+      .catch((error) => {
+        set((state) => ({ milestones: state.milestones.filter((item) => item.id !== milestone.id) }))
+        get().pushToast({
+          title: 'Cloud milestone creation failed',
+          message: error instanceof Error ? error.message : 'Save failed',
+          tone: 'error',
         })
-        .then(({ data }) => {
-          set((state) => ({
-            milestones: state.milestones.map((item) =>
-              item.id === milestone.id ? { ...item, id: data.id } : item,
-            ),
-          }))
-        })
-        .catch((error) => {
-          set((state) => ({ milestones: state.milestones.filter((item) => item.id !== milestone.id) }))
-          get().pushToast({
-            title: 'Cloud milestone creation failed',
-            message: error instanceof Error ? error.message : 'Save failed',
-            tone: 'error',
-          })
-        })
-    }
+      })
   },
 
   removeMilestone: (id) => {
     const milestone = get().milestones.find((item) => item.id === id)
     set((state) => ({ milestones: state.milestones.filter((item) => item.id !== id) }))
     get().pushToast({ title: 'Milestone removed', tone: 'success' })
-    if (get().apiMode === 'cloud' && milestone) {
+    if (milestone) {
       api.deleteMilestone(milestone.accountId, id).catch((error) => {
         get().pushToast({
           title: 'Cloud milestone deletion failed',
@@ -402,19 +349,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   addCashEvent: (accountId, event) => {
     set((state) => ({ cashEvents: [...state.cashEvents, event].sort((a, b) => b.date.localeCompare(a.date)) }))
     get().pushToast({ title: event.type === 'DEPOSIT' ? 'Deposit recorded' : 'Withdrawal recorded', tone: 'success' })
-    if (get().apiMode === 'cloud') {
-      api.recordTransaction(accountId, {
-        transaction_type: event.type,
-        amount: event.amount,
-        currency_code: get().accounts.find((account) => account.id === accountId)?.currency,
-        transaction_date: event.date,
-        description: event.note,
-        idempotency_key: `frontend-${event.id}`,
-      }).catch((error) => {
-        set((state) => ({ cashEvents: state.cashEvents.filter((item) => item.id !== event.id) }))
-        get().pushToast({ title: 'Cloud cash movement failed', message: error instanceof Error ? error.message : 'Save failed', tone: 'error' })
-      })
-    }
+    api.recordTransaction(accountId, {
+      transaction_type: event.type,
+      amount: event.amount,
+      currency_code: get().accounts.find((account) => account.id === accountId)?.currency,
+      transaction_date: event.date,
+      description: event.note,
+      idempotency_key: `frontend-${event.id}`,
+    }).catch((error) => {
+      set((state) => ({ cashEvents: state.cashEvents.filter((item) => item.id !== event.id) }))
+      get().pushToast({ title: 'Cloud cash movement failed', message: error instanceof Error ? error.message : 'Save failed', tone: 'error' })
+    })
   },
 
   restoreBackup: (backup) => {
@@ -449,15 +394,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       message: `1 USD = ${rate.toLocaleString('en-US')} IDR`,
       tone: 'success',
     })
-    if (get().apiMode === 'cloud') {
-      api.saveRate(rate).catch((error) => {
-        get().pushToast({
-          title: 'Cloud rate save failed',
-          message: error instanceof Error ? error.message : 'Save failed',
-          tone: 'error',
-        })
+    api.saveRate(rate).catch((error) => {
+      get().pushToast({
+        title: 'Cloud rate save failed',
+        message: error instanceof Error ? error.message : 'Save failed',
+        tone: 'error',
       })
-    }
+    })
   },
 
   pushToast: (toast) => {
@@ -479,10 +422,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 }))
 
+// Auto-reconnect: if token exists, fetch cloud data on startup
 if (typeof window !== 'undefined' && getApiToken()) {
   void useAppStore.getState().fetchCloudData().catch(() => {
-    /* fallback to mock if api is unreachable */
+    setApiToken(null)
+    useAppStore.setState({ token: null, ready: true })
   })
+} else if (typeof window !== 'undefined') {
+  useAppStore.setState({ ready: true })
 }
 
 function existingMessage(entry: JournalEntry): string {
@@ -515,19 +462,19 @@ export const savedScenarios: SavedScenario[] = [
   {
     id: 'scenario-conservative',
     name: 'Conservative',
-    description: '0.6% daily · 16 days · compounding',
-    params: { dailyReturn: 0.6, compounding: true, tradingDays: 16 },
-  },
-  {
-    id: 'scenario-loss',
-    name: 'Loss-adjusted',
-    description: '1.5% daily · 3 loss days per month',
-    params: { dailyReturn: 1.5, compounding: true, tradingDays: 17 },
+    description: '0.5% daily · 22 days · compounding',
+    params: { dailyReturn: 0.5, compounding: true, tradingDays: 22 },
   },
   {
     id: 'scenario-aggressive',
     name: 'Aggressive',
-    description: '3% daily · 22 days · compounding',
-    params: { dailyReturn: 3, compounding: true, tradingDays: 22 },
+    description: '3% daily · 20 days · compounding',
+    params: { dailyReturn: 3, compounding: true, tradingDays: 20 },
+  },
+  {
+    id: 'scenario-fixed',
+    name: 'Fixed lot (no compounding)',
+    description: '2% daily · 20 days · simple',
+    params: { dailyReturn: 2, compounding: false, tradingDays: 20 },
   },
 ]

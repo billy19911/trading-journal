@@ -32,7 +32,6 @@ import {
 import { useAppStore, type Theme } from '../store'
 import { useJourney } from '../hooks'
 import { backupAll, exportAccountJson, exportJournalsCsv, type BackupPayload } from '../lib/export'
-import { accountsSeed, cashEventsSeed, journalsSeed, milestonesSeed } from '../data/mock'
 import { fmtDate, fmtNumber, fmtRate, relativeTime, todayISO } from '../lib/format'
 import {
   cn,
@@ -201,6 +200,7 @@ export default function Settings() {
   const cashEvents = useAppStore((state) => state.cashEvents)
   const milestones = useAppStore((state) => state.milestones)
   const restoreBackup = useAppStore((state) => state.restoreBackup)
+  const fetchCloudData = useAppStore((state) => state.fetchCloudData)
   const { account, journey } = useJourney()
 
   const [language, setLanguage] = useLocalChoice<string>('tj-language', 'en')
@@ -262,17 +262,12 @@ export default function Settings() {
   }
 
   const handleReset = () => {
-    restoreBackup({
-      accounts: accountsSeed,
-      journals: journalsSeed,
-      cashEvents: cashEventsSeed,
-      milestones: milestonesSeed,
-    })
+    void fetchCloudData()
     setRestoreName(null)
     setResetOpen(false)
     pushToast({
-      title: 'Demo data restored',
-      message: 'All accounts, journals and targets are back to their seeded state.',
+      title: 'Data re-synced from server',
+      message: 'All local data refreshed from cloud.',
       tone: 'success',
     })
   }
